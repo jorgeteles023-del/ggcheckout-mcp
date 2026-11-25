@@ -1,6 +1,6 @@
 # Deploy GG Checkout MCP on Vercel
 
-This fork adds a stateful Streamable HTTP endpoint at `/api/mcp` while keeping the original STDIO entry point intact.
+This fork adds a protected Streamable HTTP endpoint at `/api/mcp` using Vercel's Web-standard `Request`/`Response` function interface, while keeping the original STDIO entry point intact.
 
 ## Required Vercel environment variables
 
