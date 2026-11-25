@@ -1,0 +1,27 @@
+name: MCP server build check
+
+on:
+  push:
+    branches:
+      - feat/vercel-mcp-http
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build original MCP package
+        run: npm run build
+      - name: Type-check Vercel HTTP route
+        run: npx tsc --noEmit --target ES2022 --module Node16 --moduleResolution Node16 --strict --esModuleInterop --skipLibCheck api/mcp.ts
