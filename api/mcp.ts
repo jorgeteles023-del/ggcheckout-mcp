@@ -1,15 +1,10 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { createServer } from '../src/server.js';
-
-type VercelMcpRequest = IncomingMessage & {
-  body?: unknown;
-};
 
 type McpSession = {
   server: ReturnType<typeof createServer>['server'];
-  transport: StreamableHTTPServerTransport;
+  transport: WebStandardStreamableHTTPServerTransport;
   lastSeenAt: number;
 };
 
@@ -17,23 +12,24 @@ const API_VERSION = '0.7.0';
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const MAX_SESSIONS = 100;
 
-// Vercel may reuse a warm function instance between requests. MCP session
-// state is kept only in this instance; see docs/VERCEL-MCP.md for the
-// serverless scaling limitation and production requirements.
+// Vercel can reuse a warm function instance, but it does not guarantee session
+// affinity across instances. The limitation is documented in docs/VERCEL-MCP.md.
 const sessions = new Map<string, McpSession>();
 
-function authorized(req: IncomingMessage): boolean {
+function authorized(request: Request): boolean {
   const expected = process.env.MCP_BEARER_TOKEN;
-  const header = req.headers.authorization;
+  const header = request.headers.get('authorization');
 
-  if (!expected || typeof header !== 'string' || !header.startsWith('Bearer ')) {
-    return false;
-  }
+  if (!expected || !header?.startsWith('Bearer ')) return false;
 
   const supplied = Buffer.from(header.slice('Bearer '.length), 'utf8');
   const configured = Buffer.from(expected, 'utf8');
 
   return supplied.length === configured.length && timingSafeEqual(supplied, configured);
+}
+
+function jsonError(status: number, message: string): Response {
+  return Response.json({ error: message }, { status });
 }
 
 function cleanupExpiredSessions(): void {
@@ -46,58 +42,56 @@ function cleanupExpiredSessions(): void {
   }
 }
 
-function jsonError(res: ServerResponse, status: number, message: string): void {
-  if (res.headersSent) return;
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ error: message }));
-}
-
-export default async function handler(req: VercelMcpRequest, res: ServerResponse): Promise<void> {
+async function handleMcp(request: Request): Promise<Response> {
   if (!process.env.MCP_BEARER_TOKEN) {
-    jsonError(res, 500, 'MCP_BEARER_TOKEN is not configured');
-    return;
+    return jsonError(500, 'MCP_BEARER_TOKEN is not configured');
   }
 
-  if (!authorized(req)) {
-    res.setHeader('WWW-Authenticate', 'Bearer');
-    jsonError(res, 401, 'Unauthorized');
-    return;
+  if (!authorized(request)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: {
+        'Content-Type': 'application/json',
+        'WWW-Authenticate': 'Bearer',
+      },
+    });
   }
 
   const apiKey = process.env.GGCHECKOUT_API_KEY;
-  if (!apiKey) {
-    jsonError(res, 500, 'GGCHECKOUT_API_KEY is not configured');
-    return;
-  }
+  if (!apiKey) return jsonError(500, 'GGCHECKOUT_API_KEY is not configured');
 
-  if (!['GET', 'POST', 'DELETE'].includes(req.method || '')) {
-    res.setHeader('Allow', 'GET, POST, DELETE');
-    jsonError(res, 405, 'Method not allowed');
-    return;
+  if (!['GET', 'POST', 'DELETE'].includes(request.method)) {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json', Allow: 'GET, POST, DELETE' },
+    });
   }
 
   cleanupExpiredSessions();
 
-  const sessionIdHeader = req.headers['mcp-session-id'];
-  const sessionId = typeof sessionIdHeader === 'string' ? sessionIdHeader : undefined;
+  const sessionId = request.headers.get('mcp-session-id') || undefined;
   let session = sessionId ? sessions.get(sessionId) : undefined;
 
   if (sessionId && !session) {
-    jsonError(res, 404, 'MCP session not found. Reconnect and initialize a new session.');
-    return;
+    return jsonError(404, 'MCP session not found. Reconnect and initialize a new session.');
   }
 
   if (!session) {
-    const body = req.body as { method?: string } | undefined;
-    if (req.method !== 'POST' || body?.method !== 'initialize') {
-      jsonError(res, 400, 'A new MCP session must start with an initialize request.');
-      return;
+    let body: { method?: string } | undefined;
+    if (request.method === 'POST') {
+      try {
+        body = await request.clone().json() as { method?: string };
+      } catch {
+        return jsonError(400, 'Invalid JSON request body');
+      }
+    }
+
+    if (request.method !== 'POST' || body?.method !== 'initialize') {
+      return jsonError(400, 'A new MCP session must start with an initialize request.');
     }
 
     if (sessions.size >= MAX_SESSIONS) {
-      jsonError(res, 503, 'MCP session capacity reached. Retry shortly.');
-      return;
+      return jsonError(503, 'MCP session capacity reached. Retry shortly.');
     }
 
     try {
@@ -109,9 +103,9 @@ export default async function handler(req: VercelMcpRequest, res: ServerResponse
       });
 
       const server = created.server;
-      let transport: StreamableHTTPServerTransport;
+      let transport!: WebStandardStreamableHTTPServerTransport;
 
-      transport = new StreamableHTTPServerTransport({
+      transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           sessions.set(id, { server, transport, lastSeenAt: Date.now() });
@@ -122,7 +116,6 @@ export default async function handler(req: VercelMcpRequest, res: ServerResponse
         const id = transport.sessionId;
         if (id) sessions.delete(id);
       };
-
       transport.onerror = (error) => {
         console.error('[MCP] Transport error:', error.message);
       };
@@ -131,18 +124,20 @@ export default async function handler(req: VercelMcpRequest, res: ServerResponse
       await server.connect(transport);
     } catch (error) {
       console.error('[MCP] Could not initialize server:', error instanceof Error ? error.message : 'Unknown error');
-      jsonError(res, 500, 'Could not initialize MCP server');
-      return;
+      return jsonError(500, 'Could not initialize MCP server');
     }
   }
 
   session.lastSeenAt = Date.now();
 
   try {
-    await session.transport.handleRequest(req, res, req.body);
+    return await session.transport.handleRequest(request);
   } catch (error) {
     console.error('[MCP] HTTP request failed:', error instanceof Error ? error.message : 'Unknown error');
-    if (!res.headersSent) jsonError(res, 500, 'MCP request failed');
-    else if (!res.writableEnded) res.end();
+    return jsonError(500, 'MCP request failed');
   }
 }
+
+export const GET = handleMcp;
+export const POST = handleMcp;
+export const DELETE = handleMcp;
