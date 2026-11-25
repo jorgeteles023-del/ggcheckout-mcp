@@ -1157,7 +1157,7 @@ MIT © GG Checkout Team
 
 ## Vercel / Remote MCP (Streamable HTTP)
 
-This repository also includes a protected, stateless Streamable HTTP endpoint for Vercel Functions:
+This repository also includes a protected, session-based Streamable HTTP endpoint for Vercel Functions:
 
 - Route: `/api/mcp`
 - Transport: Streamable HTTP (stateless; a fresh server is created for each invocation)
