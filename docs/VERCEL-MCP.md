@@ -1,6 +1,6 @@
 # Deploy GG Checkout MCP on Vercel
 
-This fork adds a stateless Streamable HTTP endpoint at `/api/mcp` while keeping the original STDIO entry point intact.
+This fork adds a stateful Streamable HTTP endpoint at `/api/mcp` while keeping the original STDIO entry point intact.
 
 ## Required Vercel environment variables
 
@@ -20,7 +20,7 @@ After deployment, the MCP endpoint is:
 
 Authentication: HTTP Bearer token using the value of `MCP_BEARER_TOKEN`.
 
-Transport: MCP Streamable HTTP, stateless. Each invocation creates a fresh MCP server and transport, which avoids relying on in-memory session state across serverless invocations.
+Transport: MCP Streamable HTTP with session IDs. The function keeps each active MCP server/transport in a process-local map and expires idle sessions after 30 minutes.
 
 ## Important limitations
 
@@ -32,3 +32,9 @@ Transport: MCP Streamable HTTP, stateless. Each invocation creates a fresh MCP s
 ## Smoke test
 
 Unauthenticated requests should return HTTP 401. An authenticated MCP client should initialize against the endpoint and list tools. Do not test write tools against production until you have reviewed their effects and configured the correct account.
+
+## Serverless session limitation — read before production
+
+MCP Streamable HTTP sessions are held in the warm Vercel Function process memory. Vercel can start multiple instances or replace a cold instance, and it does not guarantee that all requests for one MCP session reach the same instance. If a request reaches another instance, the session will not be found and the client must reconnect.
+
+This is acceptable for an initial preview / low-volume test, but it is **not a high-availability session architecture**. Before relying on it for production or concurrent users, add a deployment architecture with session affinity or move to a genuinely stateless MCP implementation compatible with the latest protocol. Do not assume that Vercel's Git integration alone solves session persistence.
