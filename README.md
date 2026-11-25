@@ -1154,3 +1154,14 @@ network), talking to the host through the official `@modelcontextprotocol/ext-ap
 ## License
 
 MIT © GG Checkout Team
+
+## Vercel / Remote MCP (Streamable HTTP)
+
+This repository also includes a protected, stateless Streamable HTTP endpoint for Vercel Functions:
+
+- Route: `/api/mcp`
+- Transport: Streamable HTTP (stateless; a fresh server is created for each invocation)
+- Authentication: HTTP Bearer token from `MCP_BEARER_TOKEN`
+- GG Checkout credential: `GGCHECKOUT_API_KEY` (kept separately from the MCP bearer token)
+
+See [docs/VERCEL-MCP.md](./docs/VERCEL-MCP.md) for deployment steps and required environment variables. Keep real credentials out of Git and source files. The original STDIO entry point remains unchanged.
