@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build",
+  "functions": { "api/mcp.js": { "includeFiles": "{dist/**,package.json}", "maxDuration": 60 } },
+  "rewrites": [
+    { "source": "/mcp/:token", "destination": "/api/mcp" },
+    { "source": "/mcp", "destination": "/api/mcp" },
+    { "source": "/health", "destination": "/api/mcp" }
+  ]
+}

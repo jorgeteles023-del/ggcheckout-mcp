@@ -1154,3 +1154,12 @@ network), talking to the host through the official `@modelcontextprotocol/ext-ap
 ## License
 
 MIT © GG Checkout Team
+
+## Remote HTTP mode (Vercel, Railway, Render...)
+
+For clients that need a URL (e.g. Claude custom connectors on web/mobile). Stateless Streamable HTTP, fail-closed auth.
+
+- Env vars: `GGCHECKOUT_API_KEY`, `MCP_AUTH_TOKEN` (min 24 chars; the server refuses to answer without it).
+- Endpoint: `POST /mcp`. Auth: `Authorization: Bearer <MCP_AUTH_TOKEN>` or the secret in the path, `POST /mcp/<MCP_AUTH_TOKEN>` (for clients that cannot send headers).
+- Vercel: deploy this repo (`vercel.json` included). Other hosts: `npm run build && node dist/http-server.js` (uses `PORT`).
+- Local file uploads (`upload_media`, `upload_members_area_file`) do not work in serverless.
