@@ -46,11 +46,11 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export async function handleMcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const expected = process.env.MCP_AUTH_TOKEN;
+  const expected = process.env.MCP_AUTH_TOKEN || process.env.MCP_BEARER_TOKEN;
   const apiKey = process.env.GGCHECKOUT_API_KEY;
   if (!expected || expected.length < 24 || !apiKey) {
     // Fail closed: never serve the account without a strong token.
-    return send(res, 500, { error: 'server_misconfigured', message: 'MCP_AUTH_TOKEN (min 24 chars) and GGCHECKOUT_API_KEY are required' });
+    return send(res, 500, { error: 'server_misconfigured', message: 'MCP_AUTH_TOKEN or MCP_BEARER_TOKEN (min 24 chars) and GGCHECKOUT_API_KEY are required' });
   }
 
   const path = (req.url ?? '').split('?')[0];
