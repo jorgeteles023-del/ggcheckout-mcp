@@ -1,5 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "framework": null,
+  "buildCommand": "npm run build && mkdir -p public && echo ok > public/index.html",
+  "outputDirectory": "public",
   "functions": { "api/mcp.js": { "includeFiles": "{dist/**,package.json}", "maxDuration": 60 } },
   "rewrites": [
     { "source": "/mcp/:token", "destination": "/api/mcp" },
